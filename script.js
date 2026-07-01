@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const step6 = document.getElementById('step-6');
     const stepLoading = document.getElementById('step-loading');
     const step7 = document.getElementById('step-7');
+    const step8 = document.getElementById('step-8');
 
     const btnYes = document.getElementById('btn-yes');
     const btnNo = document.getElementById('btn-no');
@@ -40,6 +41,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const summaryText = document.getElementById('summary-text');
     const btnDownload = document.getElementById('btn-download');
     const btnCopy = document.getElementById('btn-copy');
+    const btnRevealSurprise = document.getElementById('btn-reveal-surprise');
+    const btnBackToSummary = document.getElementById('btn-back-to-summary');
 
     // Content Arrays (Local Ghanaian Cuisine & Snacks)
     const lowKeyOptions = [
@@ -308,6 +311,15 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Failed to copy text: ', err);
             btnCopy.innerText = "Error copying data";
         });
+    });
+
+    // Step 8: Gratitude & Rose Reveal Transitions
+    btnRevealSurprise.addEventListener('click', () => {
+        showStep(step8);
+    });
+
+    btnBackToSummary.addEventListener('click', () => {
+        showStep(step7);
     });
 
     // --- Subtle Cosmic Background Floating Hearts ---
