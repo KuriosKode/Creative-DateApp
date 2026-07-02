@@ -39,10 +39,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Confirmation Elements
     const summaryText = document.getElementById('summary-text');
-    const btnDownload = document.getElementById('btn-download');
-    const btnCopy = document.getElementById('btn-copy');
+    const btnGoogleCal = document.getElementById('btn-google-cal');
+    const btnDownload  = document.getElementById('btn-download');
+    const btnCopy      = document.getElementById('btn-copy');
     const btnRevealSurprise = document.getElementById('btn-reveal-surprise');
-    const btnBackToSummary = document.getElementById('btn-back-to-summary');
+    const btnBackToSummary  = document.getElementById('btn-back-to-summary');
 
     // Content Arrays (Local Ghanaian Cuisine & Snacks)
     const lowKeyOptions = [
@@ -219,79 +220,154 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Step 7: Actions
 
-    // ICS Generator Helper
-    const generateICS = () => {
-        // Parse date and time
+    // ---------------------------------------------------------------
+    // Shared date/time parser — returns a Date object set to local time
+    // ---------------------------------------------------------------
+    const parseDateTimeLocal = () => {
         const dateObj = new Date(selectedDate);
-        dateObj.setMinutes(dateObj.getMinutes() + dateObj.getTimezoneOffset()); // Localize
+        // Shift back from UTC so the calendar date matches what the user saw
+        dateObj.setMinutes(dateObj.getMinutes() + dateObj.getTimezoneOffset());
 
-        // Convert "18:00" to components
-        const isAmPm = selectedTime.includes('M');
-        let hours = 19; // default 7 PM
-        let minutes = 0;
-
-        if (isAmPm) {
-            const timeParts = selectedTime.match(/(\d+):(\d+)\s+(PM|AM)/i);
-            if (timeParts) {
-                hours = parseInt(timeParts[1]);
-                minutes = parseInt(timeParts[2]);
-                if (timeParts[3].toUpperCase() === 'PM' && hours < 12) hours += 12;
-                if (timeParts[3].toUpperCase() === 'AM' && hours === 12) hours = 0;
-            }
-        } else {
-            // It's 24h format like "18:00"
-            const timeParts = selectedTime.split(':');
-            hours = parseInt(timeParts[0]);
-            minutes = parseInt(timeParts[1]);
+        let hours = 19, minutes = 0; // fallback: 7 PM
+        const match = selectedTime.match(/(\d+):(\d+)\s*(AM|PM)/i);
+        if (match) {
+            hours   = parseInt(match[1]);
+            minutes = parseInt(match[2]);
+            if (match[3].toUpperCase() === 'PM' && hours < 12) hours += 12;
+            if (match[3].toUpperCase() === 'AM' && hours === 12) hours  = 0;
         }
+        dateObj.setHours(hours, minutes, 0, 0);
+        return dateObj;
+    };
 
-        // Set hours
-        dateObj.setHours(hours, minutes, 0);
+    // ---------------------------------------------------------------
+    // Google Calendar URL builder
+    // Format: https://calendar.google.com/calendar/render?action=TEMPLATE&...
+    // Dates must be in UTC: YYYYMMDDTHHMMSSz  (trailing Z = UTC)
+    // ---------------------------------------------------------------
+    const buildGoogleCalendarURL = () => {
+        const start = parseDateTimeLocal();
+        const end   = new Date(start.getTime() + 2 * 60 * 60 * 1000); // +2 hours
 
-        // Calculate End Time (assume 2 hours duration)
-        const endObj = new Date(dateObj.getTime() + (2 * 60 * 60 * 1000));
+        const pad     = (n) => String(n).padStart(2, '0');
+        // Google Calendar accepts local floating time (no Z) for all-day-agnostic events
+        const gcalFmt = (d) =>
+            `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}` +
+            `T${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 
-        // Format to YYYYMMDDTHHMMSS format (Local time format for ICS)
-        const formatICSDate = (d) => {
-            const pad = (n) => n < 10 ? '0' + n : n;
-            return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-        };
+        const title = `Date Night: ${selectedFood}`;
 
-        const dtStart = formatICSDate(dateObj);
-        const dtEnd = formatICSDate(endObj);
+        // Clean display time (strip the extra flavour text after the dash)
+        const displayTime = selectedTime.split('–')[0].trim();
 
-        const icsContent = [
+        const description = [
+            `📅 Date Night — planned just for you.`,
+            ``,
+            `🍽️  What we're eating: ${selectedFood}`,
+            `🎵  Soundtrack: ${selectedMusic}`,
+            `🕐  Time: ${displayTime}`,
+            ``,
+            `Automated via our custom date planner app. See you there! ♥`,
+        ].join('\n');
+
+        const params = new URLSearchParams({
+            action:  'TEMPLATE',
+            text:    title,
+            dates:   `${gcalFmt(start)}/${gcalFmt(end)}`,
+            details: description,
+            sf:      'true',   // open the "simple" form
+            output:  'xml',
+        });
+
+        return `https://calendar.google.com/calendar/render?${params.toString()}`;
+    };
+
+    // ---------------------------------------------------------------
+    // "Add to Google Calendar 🗓️"
+    // ---------------------------------------------------------------
+    btnGoogleCal.addEventListener('click', () => {
+        const url = buildGoogleCalendarURL();
+
+        // Brief ripple animation before opening the tab
+        btnGoogleCal.classList.add('gcal-btn--launching');
+        setTimeout(() => {
+            window.open(url, '_blank', 'noopener,noreferrer');
+            btnGoogleCal.classList.remove('gcal-btn--launching');
+
+            // Swap label to confirmed state for 3 s
+            const label = btnGoogleCal.querySelector('.gcal-label');
+            const arrow = btnGoogleCal.querySelector('.gcal-arrow');
+            const prev  = label.textContent;
+            label.textContent = 'Opening Google Calendar…';
+            if (arrow) arrow.style.opacity = '0';
+            setTimeout(() => {
+                label.textContent = prev;
+                if (arrow) arrow.style.opacity = '';
+            }, 3000);
+        }, 220);
+    });
+
+    // ---------------------------------------------------------------
+    // "Save .ics" — full ICS with VALARM reminder
+    // ---------------------------------------------------------------
+    const buildICSEvent = ({ summary, description, includeAlarm = false }) => {
+        const start = parseDateTimeLocal();
+        const end   = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+
+        const pad     = (n) => String(n).padStart(2, '0');
+        const icsDate = (d) =>
+            `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}` +
+            `T${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+
+        const escICS = (s) => s
+            .replace(/\\/g, '\\\\')
+            .replace(/;/g,  '\\;')
+            .replace(/,/g,  '\\,')
+            .replace(/\n/g, '\\n');
+
+        const alarm = includeAlarm ? [
+            'BEGIN:VALARM',
+            'TRIGGER:-PT1H',
+            'ACTION:DISPLAY',
+            'DESCRIPTION:Reminder: Date Night in 1 hour! ♥',
+            'END:VALARM',
+        ] : [];
+
+        return [
             'BEGIN:VCALENDAR',
             'VERSION:2.0',
+            'CALSCALE:GREGORIAN',
+            'METHOD:PUBLISH',
             'PRODID:-//Date Planner App//EN',
             'BEGIN:VEVENT',
-            `DTSTART:${dtStart}`,
-            `DTEND:${dtEnd}`,
-            `SUMMARY:Date ♥`,
-            `DESCRIPTION:Agenda: ${selectedFood}\\nSoundtrack: ${selectedMusic}`,
+            `DTSTART:${icsDate(start)}`,
+            `DTEND:${icsDate(end)}`,
+            `SUMMARY:${escICS(summary)}`,
+            `DESCRIPTION:${escICS(description)}`,
+            ...alarm,
             'END:VEVENT',
-            'END:VCALENDAR'
-        ].join('\\r\\n');
-
-        return icsContent;
+            'END:VCALENDAR',
+        ].join('\r\n');
     };
 
     btnDownload.addEventListener('click', () => {
-        const icsData = generateICS();
+        const icsData = buildICSEvent({
+            summary:      `Date Night: ${selectedFood}`,
+            description:  `What we're eating: ${selectedFood}\nSoundtrack: ${selectedMusic}\n\nAutomated via our custom date planner app. See you there! ♥`,
+            includeAlarm: true,
+        });
         const blob = new Blob([icsData], { type: 'text/calendar;charset=utf-8' });
         const link = document.createElement('a');
-        link.href = window.URL.createObjectURL(blob);
-        link.setAttribute('download', 'date_invitation.ics');
+        link.href = URL.createObjectURL(blob);
+        link.setAttribute('download', 'date_night.ics');
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
 
-        // Visual feedback
         const originalHTML = btnDownload.innerHTML;
-        btnDownload.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px; vertical-align: text-bottom;"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>Downloaded!`;
-        setTimeout(() => {
-            btnDownload.innerHTML = originalHTML;
-        }, 3000);
+        btnDownload.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> Saved!`;
+        setTimeout(() => { btnDownload.innerHTML = originalHTML; }, 3000);
     });
 
     btnCopy.addEventListener('click', () => {
